@@ -3,7 +3,7 @@
 Plugin Name: Kombi-Tour Konfigurator
 Plugin URI: https://freizeitexperten.de
 Description: Ein dynamischer Konfigurator fuer Kombi-Touren mit Backend-Datenbank, Sonderregeln, Saison-Limits und flexiblen API-/Warenkorb-Endpunkten fuer mehrere Websites.
-Version: 1.7.67
+Version: 1.7.68
 Author: Webagentur Geldern / Chris Derix
 */
 
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 class NiersKombiKonfigurator {
-    const VERSION = '1.7.67';
+    const VERSION = '1.7.68';
 
     public function __construct() {
         // Backend: Meta Box für einfache ID Eingabe
@@ -2381,6 +2381,23 @@ class NiersKombiKonfigurator {
         return isset($labels[$event_type]) ? $labels[$event_type] : $event_type;
     }
 
+    private function get_checkout_funnel_step_events_for_event_type($event_type) {
+        $event_type = sanitize_key($event_type);
+
+        $map = array(
+            'contact_step_submitted' => array('contact_step_submitted'),
+            'cart_opened_after_contact' => array('contact_step_submitted', 'cart_opened_after_contact'),
+            'checkout_ready' => array('contact_step_submitted', 'cart_opened_after_contact', 'checkout_ready'),
+            'payment_clicked' => array('contact_step_submitted', 'cart_opened_after_contact', 'checkout_ready', 'payment_clicked'),
+            'paypal_clicked' => array('contact_step_submitted', 'cart_opened_after_contact', 'checkout_ready', 'payment_clicked'),
+            'cart_data_detected' => array('contact_step_submitted', 'cart_opened_after_contact', 'checkout_ready', 'payment_clicked'),
+            'cart_data_success' => array('contact_step_submitted', 'cart_opened_after_contact', 'checkout_ready', 'payment_clicked', 'cart_data_success'),
+            'order_submitted' => array('contact_step_submitted', 'cart_opened_after_contact', 'checkout_ready', 'payment_clicked', 'cart_data_success', 'order_submitted'),
+        );
+
+        return isset($map[$event_type]) ? $map[$event_type] : array();
+    }
+
     private function get_checkout_funnel_metrics($filters) {
         $events = $this->get_checkout_funnel_filtered_events($filters);
         $steps = $this->get_checkout_funnel_steps();
@@ -2401,20 +2418,13 @@ class NiersKombiKonfigurator {
             }
             $raw_counts[$event_type]++;
 
-            $set_event_type = $event_type === 'paypal_clicked' ? 'payment_clicked' : $event_type;
-            if (in_array($event_type, array('cart_data_detected', 'cart_data_success', 'order_submitted'), true) && isset($sets['payment_clicked'])) {
-                $set_event_type = 'payment_clicked';
-            }
-            if ($set_event_type !== $event_type && isset($raw_counts[$set_event_type])) {
-                $raw_counts[$set_event_type]++;
-            }
-
-            if (!isset($sets[$set_event_type])) {
-                continue;
-            }
-
             $identity = $this->get_checkout_funnel_event_identity($event);
-            $sets[$set_event_type][$identity] = true;
+            foreach ($this->get_checkout_funnel_step_events_for_event_type($event_type) as $set_event_type) {
+                if (isset($sets[$set_event_type])) {
+                    $sets[$set_event_type][$identity] = true;
+                }
+            }
+
             if (!isset($latest_by_identity[$identity]) || strcmp((string) $event['created_at'], (string) $latest_by_identity[$identity]['created_at']) > 0) {
                 $latest_by_identity[$identity] = $event;
             }

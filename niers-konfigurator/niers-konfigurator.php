@@ -3,7 +3,7 @@
 Plugin Name: Niers Touren-Konfigurator
 Plugin URI: https://freizeitexperten.de
 Description: Ein 3-stufiger Konfigurator für Bootsbuchungen an der Niers mit Live-API-Schnittstelle. Shortcode: [niers_konfigurator_3_steps]
-Version: 9.16
+Version: 9.17
 Author: Freizeitexperten
 Author URI: https://freizeitexperten.de
 */
@@ -128,6 +128,7 @@ function niers_konfigurator_render_rules_admin_page() {
 add_shortcode('niers_konfigurator_3_steps', function() {
     $cart_endpoint = get_option('niers_kombi_cart_endpoint', home_url('/shopping_cart.php'));
     $cart_redirect = get_option('niers_kombi_cart_redirect', home_url('/warenkorb/'));
+    $api_base_url = untrailingslashit(get_option('niers_kombi_api_base_url', 'https://checkin.freizeitexperten.de/shop'));
     $contacts_module_enabled = get_option('niers_kombi_contacts_module_enabled', '0') === '1';
     $contact_step_enabled = $contacts_module_enabled && get_option('niers_kombi_contact_step_enabled', '0') === '1';
     $contact_step_url = get_option('niers_kombi_contact_step_url', home_url('/buchungsdaten/'));
@@ -477,7 +478,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
       const iconPlus = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
       const iconCheck = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-      let state = { step: 1, start: "", end: "", date: "", time: "", adults: 2, children: 0, babies: 0, selectedCat: null, apiData: {}, apiPrices: {}, selectedQuotas: {}, priceLoading: false, priceError: false, livePriceKey: "", cartEndpoint: <?php echo json_encode($cart_endpoint); ?>, cartRedirect: <?php echo json_encode($cart_redirect); ?>, contactStepEnabled: <?php echo $contact_step_enabled ? 'true' : 'false'; ?>, contactStepUrl: <?php echo json_encode($contact_step_url); ?> };
+      let state = { step: 1, start: "", end: "", date: "", time: "", adults: 2, children: 0, babies: 0, selectedCat: null, apiData: {}, apiPrices: {}, selectedQuotas: {}, priceLoading: false, priceError: false, livePriceKey: "", apiBaseUrl: <?php echo json_encode($api_base_url); ?>, cartEndpoint: <?php echo json_encode($cart_endpoint); ?>, cartRedirect: <?php echo json_encode($cart_redirect); ?>, contactStepEnabled: <?php echo $contact_step_enabled ? 'true' : 'false'; ?>, contactStepUrl: <?php echo json_encode($contact_step_url); ?> };
       const els = { p1: document.getElementById('panel-1'), p2: document.getElementById('panel-2'), p3: document.getElementById('panel-3'), st1: document.getElementById('st-1'), st2: document.getElementById('st-2'), st3: document.getElementById('st-3'), st3div: document.getElementById('st-3-divider'), start: document.getElementById('nc-start'), dest: document.getElementById('nc-dest'), date: document.getElementById('nc-date'), time: document.getElementById('nc-time'), vA: document.getElementById('val-adults'), vC: document.getElementById('val-children'), vB: document.getElementById('val-babies'), error: document.getElementById('nc-error-msg'), bGrid: document.getElementById('boats-container'), eGrid: document.getElementById('extras-container'), sbBtnAction: document.getElementById('sb-btn-action'), mbBtnAction: document.getElementById('mb-btn-action') };
 
       let fpInstance = null;
@@ -566,10 +567,18 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           state.livePriceKey = "";
       }
 
+      function normalizeApiBaseUrl(rawUrl) {
+          return String(rawUrl || 'https://checkin.freizeitexperten.de/shop').replace(/\/+$/, '');
+      }
+
+      function buildApiUrl(fileName) {
+          return `${normalizeApiBaseUrl(state.apiBaseUrl)}/${fileName}`;
+      }
+
       async function fetchService(sid) {
           if(!sid || sid === 0) return null;
           try {
-              let res = await fetch(`https://checkin.freizeitexperten.de/shop/service_data.php?service_id=${sid}`);
+              let res = await fetch(`${buildApiUrl('service_data.php')}?service_id=${encodeURIComponent(sid)}`);
               if (!res.ok) return null;
               let json = await res.json();
               return json.data || json;
@@ -670,6 +679,37 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           });
       }
 
+      function normalizeQuotaArray(rawQuotas) {
+          let qs = rawQuotas || [];
+          if (typeof qs === 'object' && !Array.isArray(qs)) {
+              qs = Object.values(qs).filter(v => v && typeof v === 'object' && (v.id || v.quota_id || v.name));
+          }
+          return Array.isArray(qs) ? qs : [];
+      }
+
+      function getCategoryQuotaArray(cat) {
+          const api = state.apiData[cat];
+          return normalizeQuotaArray(api?.s1_quotas || api);
+      }
+
+      function isBoatQuota(q, cat) {
+          const n = (q.name || "").toLowerCase();
+          if (n.includes('weste') || n.includes('zubehör') || n.includes('tonne')) return false;
+          if (n.includes('tonne') && cat === 'kajak') return false;
+          return true;
+      }
+
+      function getBoatQuotaArray(cat) {
+          return getCategoryQuotaArray(cat).filter(q => isBoatQuota(q, cat));
+      }
+
+      function getQuotaAvailable(cat, qid) {
+          const quota = getCategoryQuotaArray(cat).find(q => String(q.id || q.quota_id) === String(qid));
+          if (!quota) return 0;
+          const available = parseInt(quota.available ?? quota.amount ?? quota.free);
+          return isNaN(available) ? 0 : Math.max(0, available);
+      }
+
       function normalizeBoatQuota(q) {
           const qId = q.id || q.quota_id;
           const qName = q.name || "";
@@ -681,9 +721,72 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           if(isNaN(qMin)) { qMin = (qPpl >= 4) ? qPpl - 1 : qPpl; }
 
           let qAvailable = parseInt(q.available ?? q.amount ?? q.free);
-          qAvailable = isNaN(qAvailable) ? 99 : qAvailable;
+          qAvailable = isNaN(qAvailable) ? 0 : Math.max(0, qAvailable);
 
           return { raw: q, qId, qName, qPpl, qMin, qAvailable };
+      }
+
+      function getSelectedBoatValidation(cat = state.selectedCat) {
+          const seatingPax = state.adults + state.children;
+          if (!cat) {
+              return { ok: false, capacity: 0, minPpl: 0, message: "Bitte zuerst ein Boot wählen." };
+          }
+
+          const selectedAmounts = state.selectedQuotas[cat] || {};
+          const normalized = getBoatQuotaArray(cat).map(normalizeBoatQuota).filter(q => q.qId);
+          const quotaById = {};
+          normalized.forEach(q => { quotaById[String(q.qId)] = q; });
+
+          let capacity = 0;
+          let minPpl = 0;
+          let selectedBoatCount = 0;
+
+          for (let rawId in selectedAmounts) {
+              const count = parseInt(selectedAmounts[rawId], 10) || 0;
+              if (count <= 0) continue;
+              const q = quotaById[String(rawId)];
+
+              if (!q) {
+                  return {
+                      ok: false,
+                      capacity,
+                      minPpl,
+                      message: "Die gewählte Bootsauswahl ist nicht mehr verfügbar. Bitte die Boote neu auswählen."
+                  };
+              }
+
+              if (count > q.qAvailable) {
+                  return {
+                      ok: false,
+                      capacity,
+                      minPpl,
+                      message: `${q.qName || 'Das gewählte Boot'} ist nur noch ${q.qAvailable}x verfügbar. Bitte die Auswahl anpassen.`
+                  };
+              }
+
+              selectedBoatCount += count;
+              capacity += count * q.qPpl;
+              minPpl += count * q.qMin;
+          }
+
+          if (selectedBoatCount <= 0) {
+              return { ok: false, capacity, minPpl, message: "Bitte zuerst ein Boot wählen." };
+          }
+
+          if (capacity < seatingPax) {
+              return { ok: false, capacity, minPpl, message: "Bitte ausreichend Sitzplätze für alle Personen wählen." };
+          }
+
+          if (minPpl > seatingPax) {
+              return {
+                  ok: false,
+                  capacity,
+                  minPpl,
+                  message: "Diese Bootsauswahl erfüllt die Mindestbelegung nicht. Bitte ein kleineres Boot oder eine andere Kombination wählen."
+              };
+          }
+
+          return { ok: true, capacity, minPpl, message: "" };
       }
 
       function getVisibleBoatQuotas(cat, quotas, seatingPax) {
@@ -897,19 +1000,8 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           const r = getRoute(); 
           document.getElementById('nc-loading-quotas').style.display = 'block'; 
           document.getElementById('nc-step2-content').style.display = 'none';
-          const fetchQuota = async (sid) => { 
-              if(!sid || sid === 0) return null; 
-              let fd = new FormData(); 
-              fd.append('service_id', sid); 
-              fd.append('quotas_begin_time', `${state.date} ${state.time}:00`); 
-              try { 
-                  let res = await fetch('https://checkin.freizeitexperten.de/shop/quota_data.php', {method:'POST', body:fd}); 
-                  let json = await res.json(); 
-                  return json.data || json; 
-              } catch(e) { return null; } 
-          };
           const [kaQ, kjQ, scQ, kaS, kjS, scS] = await Promise.all([
-              fetchQuota(r.ids.kanu), fetchQuota(r.ids.kajak), fetchQuota(r.ids.schlauch),
+              fetchQuotaData(r.ids.kanu), fetchQuotaData(r.ids.kajak), fetchQuotaData(r.ids.schlauch),
               fetchService(r.ids.kanu), fetchService(r.ids.kajak), fetchService(r.ids.schlauch)
           ]);
           state.apiData = { kanu: kaQ, kajak: kjQ, schlauch: scQ };
@@ -927,6 +1019,32 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           document.getElementById('nc-step2-content').style.display = 'block';
           updateStateView();
           renderBoats();
+      }
+
+      async function fetchQuotaData(sid) {
+          if(!sid || sid === 0) return null;
+          const timeFormatted = state.time && state.time.length <= 5 ? state.time + ':00' : state.time;
+          let fd = new FormData();
+          fd.append('service_id', sid);
+          fd.append('date', state.date);
+          fd.append('time', timeFormatted);
+          fd.append('quotas_begin_time', `${state.date} ${timeFormatted}`);
+          try {
+              let res = await fetch(buildApiUrl('quota_data.php'), {method:'POST', body:fd});
+              if (!res.ok) return null;
+              let json = await res.json();
+              return json.data || json;
+          } catch(e) { return null; }
+      }
+
+      async function refreshSelectedLiveQuotas() {
+          const r = getRoute();
+          if (!r || !state.selectedCat) return false;
+          const serviceId = r.ids[state.selectedCat];
+          const freshQuotaData = await fetchQuotaData(serviceId);
+          if (!freshQuotaData) return false;
+          state.apiData[state.selectedCat] = freshQuotaData;
+          return true;
       }
 
       function renderBoats() {
@@ -966,7 +1084,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
                   if(isNaN(qMin)) { qMin = (qPpl >= 4) ? qPpl - 1 : qPpl; }
                   
                   let qAvail = parseInt(q.available ?? q.amount ?? q.free);
-                  qAvail = isNaN(qAvail) ? 99 : qAvail;
+                  qAvail = isNaN(qAvail) ? 0 : Math.max(0, qAvail);
 
                   totalAvailableCapacity += (qPpl * qAvail);
                   
@@ -1003,7 +1121,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
                       if(isNaN(qMin)) { qMin = (qPpl >= 4) ? qPpl - 1 : qPpl; }
                       
                       let qAvail = parseInt(q.available ?? q.amount ?? q.free);
-                      qAvail = isNaN(qAvail) ? 99 : qAvail;
+                      qAvail = isNaN(qAvail) ? 0 : Math.max(0, qAvail);
 
                       return qPpl >= seatingPax && qMin <= seatingPax && qAvail > 0;
                   });
@@ -1046,7 +1164,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
                       if(isNaN(qMin)) { qMin = (qPpl >= 4) ? qPpl - 1 : qPpl; }
                       
                       let qAvailable = parseInt(q.available ?? q.amount ?? q.free);
-                      qAvailable = isNaN(qAvailable) ? 99 : qAvailable;
+                      qAvailable = isNaN(qAvailable) ? 0 : Math.max(0, qAvailable);
 
                       if(!qId) return ''; 
                       
@@ -1154,7 +1272,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
               const count = state.selectedQuotas[state.selectedCat][qId] || 0;
               
               let qAvailable = parseInt(q.available ?? q.amount ?? q.free);
-              qAvailable = isNaN(qAvailable) ? 99 : qAvailable;
+              qAvailable = isNaN(qAvailable) ? 0 : Math.max(0, qAvailable);
               
               const maxAllowed = qAvailable;
               const plusDisabled = count >= maxAllowed;
@@ -1184,7 +1302,8 @@ add_shortcode('niers_konfigurator_3_steps', function() {
 
       window.updateBoatCount = (cat, qid, delta) => { 
           if(!state.selectedQuotas[cat][qid]) state.selectedQuotas[cat][qid] = 0; 
-          state.selectedQuotas[cat][qid] = Math.max(0, state.selectedQuotas[cat][qid] + delta); 
+          const maxAvailable = getQuotaAvailable(cat, qid);
+          state.selectedQuotas[cat][qid] = Math.min(maxAvailable, Math.max(0, state.selectedQuotas[cat][qid] + delta));
           if (state.step === 2) renderBoats(); 
           if (state.step === 3) renderExtras();
           updateStateView(); 
@@ -1271,7 +1390,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           }, 700);
       }
 
-      function submitToCart() {
+      async function submitToCart() {
           const r = getRoute();
           const serviceId = r.ids[state.selectedCat];
           if (!hasEnoughRoutePax(r)) {
@@ -1284,6 +1403,23 @@ add_shortcode('niers_konfigurator_3_steps', function() {
               alert("Der Preis konnte aktuell nicht aus dem Buchungssystem geladen werden. Bitte erneut versuchen oder telefonisch buchen.");
               return;
           }
+
+          const refreshed = await refreshSelectedLiveQuotas();
+          if (!refreshed) {
+              document.getElementById('nc-success-overlay').style.display = 'none';
+              alert("Die Live-Verfügbarkeit konnte aktuell nicht geprüft werden. Bitte erneut versuchen oder telefonisch buchen.");
+              return;
+          }
+
+          const validation = getSelectedBoatValidation();
+          if (!validation.ok) {
+              document.getElementById('nc-success-overlay').style.display = 'none';
+              renderBoats();
+              updateStateView();
+              alert(validation.message);
+              return;
+          }
+
           const params = new URLSearchParams();
           params.append('service_id', serviceId);
           params.append('date', state.date); 
@@ -1355,29 +1491,12 @@ add_shortcode('niers_konfigurator_3_steps', function() {
               els.error.style.display = 'none';
               goToStep(2); fetchLiveQuotas();
           } else if(state.step === 2) {
-              let boatCap = 0; 
-              const seatingPax = state.adults + state.children;
               if(!state.selectedCat) { alert("Bitte zuerst ein Boot wählen."); return; }
               if(!hasEnoughRoutePax()) { alert(getRouteMinPaxMessage()); return; }
               if(!canUseSelectedLivePrice()) { alert("Der Preis für diese Bootsauswahl konnte aktuell nicht aus dem Buchungssystem geladen werden. Bitte erneut versuchen oder telefonisch buchen."); return; }
-              
-              if(state.selectedCat) { 
-                  let qs = state.apiData[state.selectedCat]?.s1_quotas || state.apiData[state.selectedCat]; 
-                  if (typeof qs === 'object' && !Array.isArray(qs)) qs = Object.values(qs).filter(v => v && typeof v === 'object');
-                  if (Array.isArray(qs)) {
-                      qs.forEach(q => { 
-                          const qId = q.id || q.quota_id;
-                          const qName = (q.name || "").toLowerCase();
-                          if (qName.includes('weste') || qName.includes('zubehör') || qName.includes('tonne')) return;
-                          
-                          let qPpl = parseInt(q.ppl || q.capacity);
-                          if(isNaN(qPpl)) { let m = qName.match(/(\d+)er/); qPpl = m ? parseInt(m[1]) : 1; }
-                          
-                          if(qId) boatCap += (state.selectedQuotas[state.selectedCat][qId] || 0) * qPpl; 
-                      });
-                  } 
-              }
-              if(boatCap < seatingPax) { alert("Bitte ausreichend Sitzplätze für alle Personen wählen."); return; }
+
+              const validation = getSelectedBoatValidation();
+              if(!validation.ok) { alert(validation.message); return; }
               
               // DYNAMISCH WEITER ODER DIREKT ZUM CHECKOUT
               const hasExtras = checkHasExtras(state.selectedCat);
@@ -1391,6 +1510,8 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           } else if (state.step === 3) {
               if(!hasEnoughRoutePax()) { alert(getRouteMinPaxMessage()); return; }
               if(!canUseSelectedLivePrice()) { alert("Der Preis für diese Bootsauswahl konnte aktuell nicht aus dem Buchungssystem geladen werden. Bitte erneut versuchen oder telefonisch buchen."); return; }
+              const validation = getSelectedBoatValidation();
+              if(!validation.ok) { alert(validation.message); goToStep(2); renderBoats(); return; }
               document.getElementById('nc-success-overlay').style.display = 'flex';
               submitToCart();
           }
@@ -1453,7 +1574,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
                           if(isNaN(qMin)) { qMin = (qPpl >= 4) ? qPpl - 1 : qPpl; }
                           
                           let qAvail = parseInt(q.available ?? q.amount ?? q.free);
-                          qAvail = isNaN(qAvail) ? 99 : qAvail;
+                          qAvail = isNaN(qAvail) ? 0 : Math.max(0, qAvail);
                           totalAvailableCapacity += (qPpl * qAvail);
                           
                           const count = state.selectedQuotas[cat][qId] || 0;
