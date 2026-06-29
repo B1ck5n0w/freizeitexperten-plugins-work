@@ -3,7 +3,7 @@
 Plugin Name: Niers Touren-Konfigurator
 Plugin URI: https://freizeitexperten.de
 Description: Ein 3-stufiger Konfigurator für Bootsbuchungen an der Niers mit Live-API-Schnittstelle. Shortcode: [niers_konfigurator_3_steps]
-Version: 9.17
+Version: 9.18
 Author: Freizeitexperten
 Author URI: https://freizeitexperten.de
 */
@@ -82,10 +82,31 @@ function niers_konfigurator_render_rules_admin_page() {
         wp_die('Keine Berechtigung.');
     }
 
+    if (isset($_POST['niers_konfigurator_settings_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['niers_konfigurator_settings_nonce'])), 'niers_konfigurator_save_settings')) {
+        update_option('niers_konfigurator_api_v1_base_url', untrailingslashit(esc_url_raw(wp_unslash($_POST['niers_konfigurator_api_v1_base_url'] ?? ''))));
+        echo '<div class="notice notice-success is-dismissible"><p>Einstellungen gespeichert.</p></div>';
+    }
+
+    $api_v1_base_url = get_option('niers_konfigurator_api_v1_base_url', '');
     $tour_data = niers_konfigurator_get_tour_data();
     ?>
     <div class="wrap">
         <h1>Niers Konfigurator: Strecken & Regeln</h1>
+        <form method="post" style="background:#fff;border:1px solid #ccd0d4;padding:16px;margin:16px 0;max-width:880px;">
+            <?php wp_nonce_field('niers_konfigurator_save_settings', 'niers_konfigurator_settings_nonce'); ?>
+            <h2 style="margin-top:0;">DEV API v1</h2>
+            <p>Optionaler API-v1-Endpunkt fuer die serverseitige Warenkorb-Vorpruefung. Leer lassen, um die Vorpruefung zu deaktivieren.</p>
+            <table class="form-table" role="presentation">
+                <tr>
+                    <th scope="row"><label for="niers_konfigurator_api_v1_base_url">API v1 Basis-URL</label></th>
+                    <td>
+                        <input type="url" class="regular-text" id="niers_konfigurator_api_v1_base_url" name="niers_konfigurator_api_v1_base_url" value="<?php echo esc_attr($api_v1_base_url); ?>" placeholder="https://erp.ki-experte-derix.de/api/v1" />
+                        <p class="description">Aktuell wird daraus <code>/cart_validate.php</code> aufgerufen. Fuer Live erst nach separater Freigabe aktivieren.</p>
+                    </td>
+                </tr>
+            </table>
+            <?php submit_button('Einstellungen speichern'); ?>
+        </form>
         <p>Diese Übersicht zeigt die aktuell im Niers-Konfigurator hinterlegten Strecken, Uhrzeiten, Mindestpersonen und Service-IDs. Leere Uhrzeit-Listen erscheinen im Frontend als <strong>Nur auf Anfrage</strong>.</p>
         <table class="widefat striped" style="margin-top:16px;">
             <thead>
@@ -129,6 +150,8 @@ add_shortcode('niers_konfigurator_3_steps', function() {
     $cart_endpoint = get_option('niers_kombi_cart_endpoint', home_url('/shopping_cart.php'));
     $cart_redirect = get_option('niers_kombi_cart_redirect', home_url('/warenkorb/'));
     $api_base_url = untrailingslashit(get_option('niers_kombi_api_base_url', 'https://checkin.freizeitexperten.de/shop'));
+    $api_v1_base_url = untrailingslashit(get_option('niers_konfigurator_api_v1_base_url', ''));
+    $cart_validate_endpoint = $api_v1_base_url ? $api_v1_base_url . '/cart_validate.php' : '';
     $contacts_module_enabled = get_option('niers_kombi_contacts_module_enabled', '0') === '1';
     $contact_step_enabled = $contacts_module_enabled && get_option('niers_kombi_contact_step_enabled', '0') === '1';
     $contact_step_url = get_option('niers_kombi_contact_step_url', home_url('/buchungsdaten/'));
@@ -478,7 +501,7 @@ add_shortcode('niers_konfigurator_3_steps', function() {
       const iconPlus = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
       const iconCheck = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-      let state = { step: 1, start: "", end: "", date: "", time: "", adults: 2, children: 0, babies: 0, selectedCat: null, apiData: {}, apiPrices: {}, selectedQuotas: {}, priceLoading: false, priceError: false, livePriceKey: "", apiBaseUrl: <?php echo json_encode($api_base_url); ?>, cartEndpoint: <?php echo json_encode($cart_endpoint); ?>, cartRedirect: <?php echo json_encode($cart_redirect); ?>, contactStepEnabled: <?php echo $contact_step_enabled ? 'true' : 'false'; ?>, contactStepUrl: <?php echo json_encode($contact_step_url); ?> };
+      let state = { step: 1, start: "", end: "", date: "", time: "", adults: 2, children: 0, babies: 0, selectedCat: null, apiData: {}, apiPrices: {}, selectedQuotas: {}, priceLoading: false, priceError: false, livePriceKey: "", apiBaseUrl: <?php echo json_encode($api_base_url); ?>, cartEndpoint: <?php echo json_encode($cart_endpoint); ?>, cartRedirect: <?php echo json_encode($cart_redirect); ?>, cartValidateEndpoint: <?php echo json_encode($cart_validate_endpoint); ?>, contactStepEnabled: <?php echo $contact_step_enabled ? 'true' : 'false'; ?>, contactStepUrl: <?php echo json_encode($contact_step_url); ?> };
       const els = { p1: document.getElementById('panel-1'), p2: document.getElementById('panel-2'), p3: document.getElementById('panel-3'), st1: document.getElementById('st-1'), st2: document.getElementById('st-2'), st3: document.getElementById('st-3'), st3div: document.getElementById('st-3-divider'), start: document.getElementById('nc-start'), dest: document.getElementById('nc-dest'), date: document.getElementById('nc-date'), time: document.getElementById('nc-time'), vA: document.getElementById('val-adults'), vC: document.getElementById('val-children'), vB: document.getElementById('val-babies'), error: document.getElementById('nc-error-msg'), bGrid: document.getElementById('boats-container'), eGrid: document.getElementById('extras-container'), sbBtnAction: document.getElementById('sb-btn-action'), mbBtnAction: document.getElementById('mb-btn-action') };
 
       let fpInstance = null;
@@ -1390,6 +1413,112 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           }, 700);
       }
 
+      function buildCartValidatePayload(serviceId, timeFormatted) {
+          const selectedAmounts = state.selectedQuotas[state.selectedCat] || {};
+          const quotas = [];
+
+          for (let quotaId in selectedAmounts) {
+              const pcs = parseInt(selectedAmounts[quotaId], 10) || 0;
+              if (pcs > 0) {
+                  quotas.push({
+                      section: 1,
+                      quota_id: parseInt(quotaId, 10),
+                      pcs: pcs
+                  });
+              }
+          }
+
+          return {
+              origin: window.location.hostname,
+              source: 'niers-konfigurator',
+              items: [
+                  {
+                      service_id: parseInt(serviceId, 10),
+                      date: state.date,
+                      time: timeFormatted,
+                      overnight_stays: 0,
+                      pax: {
+                          adults: parseInt(state.adults, 10) || 0,
+                          children: parseInt(state.children, 10) || 0,
+                          babies: parseInt(state.babies, 10) || 0
+                      },
+                      quantity: quotas.reduce((sum, q) => sum + q.pcs, 0),
+                      quotas: quotas,
+                      metadata: {
+                          start: state.start,
+                          end: state.end,
+                          selected_category: state.selectedCat,
+                          page_url: window.location.href
+                      }
+                  }
+              ],
+              campaigns: [],
+              request_id: `niers-${Date.now()}-${Math.random().toString(36).slice(2)}`
+          };
+      }
+
+      function cartValidateMessage(data) {
+          const defaultMessage = "Die Buchung konnte im ERP nicht bestätigt werden. Bitte Auswahl prüfen oder telefonisch buchen.";
+          const item = data && data.items && data.items[0] ? data.items[0] : null;
+          const messages = item && Array.isArray(item.messages) ? item.messages : [];
+          const first = messages[0] || null;
+          if (!first || !first.code) return defaultMessage;
+
+          const map = {
+              quota_stock_conflict: "Die gewählte Bootsauswahl ist nicht mehr ausreichend verfügbar. Bitte Auswahl anpassen.",
+              quota_min_people: "Die Mindestbelegung für das gewählte Boot ist nicht erreicht. Bitte ein passendes Boot wählen.",
+              quota_capacity_too_low: "Die gewählten Boote haben nicht genug Plätze für alle Personen.",
+              quota_not_allowed: "Die gewählte Bootsauswahl passt nicht zu dieser Tour.",
+              quota_required: "Bitte zuerst ein Boot auswählen.",
+              invalid_date: "Das Datum konnte nicht bestätigt werden. Bitte erneut auswählen.",
+              invalid_time: "Die Uhrzeit konnte nicht bestätigt werden. Bitte erneut auswählen.",
+              service_not_found: "Die Tour konnte im ERP nicht gefunden werden."
+          };
+          return map[first.code] || first.message || defaultMessage;
+      }
+
+      async function validateCartBeforeSubmit(serviceId, timeFormatted) {
+          if (!state.cartValidateEndpoint) {
+              return { ok: true };
+          }
+
+          const payload = buildCartValidatePayload(serviceId, timeFormatted);
+          let res, json;
+          try {
+              res = await fetch(state.cartValidateEndpoint, {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json'
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify(payload)
+              });
+              json = await res.json();
+          } catch (e) {
+              return {
+                  ok: false,
+                  message: "Die ERP-Vorprüfung ist aktuell nicht erreichbar. Bitte erneut versuchen oder telefonisch buchen."
+              };
+          }
+
+          if (!res.ok || !json || json.status !== true) {
+              return {
+                  ok: false,
+                  message: "Die ERP-Vorprüfung konnte nicht abgeschlossen werden. Bitte erneut versuchen oder telefonisch buchen."
+              };
+          }
+
+          if (!json.data || json.data.valid !== true) {
+              return {
+                  ok: false,
+                  message: cartValidateMessage(json.data)
+              };
+          }
+
+          return { ok: true, data: json.data };
+      }
+
       async function submitToCart() {
           const r = getRoute();
           const serviceId = r.ids[state.selectedCat];
@@ -1424,6 +1553,14 @@ add_shortcode('niers_konfigurator_3_steps', function() {
           params.append('service_id', serviceId);
           params.append('date', state.date); 
           const timeFormatted = state.time.length <= 5 ? state.time + ':00' : state.time;
+
+          const cartPrecheck = await validateCartBeforeSubmit(serviceId, timeFormatted);
+          if (!cartPrecheck.ok) {
+              document.getElementById('nc-success-overlay').style.display = 'none';
+              alert(cartPrecheck.message);
+              return;
+          }
+
           params.append('time', timeFormatted); 
           params.append('ppl_adult', state.adults);
           params.append('ppl_child', state.children);
