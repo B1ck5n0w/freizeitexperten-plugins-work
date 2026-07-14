@@ -13,13 +13,16 @@ Codex bereitet lokal gepruefte `.php`-Dateien vor und fasst Live nicht direkt an
 
 ## Aktueller DEV-Stand
 
-- `niers-konfigurator` Version `9.18`
+- `niers-konfigurator` Version `9.18.1`
   - optionale API-v1-Warenkorb-Vorpruefung per `niers_konfigurator_api_v1_base_url`
   - ruft bei gesetzter URL `POST /api/v1/cart_validate.php` vor der bisherigen Warenkorb-Uebergabe auf
   - alter Warenkorb-/Checkout-Flow bleibt unveraendert, wenn die Option leer ist
+  - Status 2026-06-30: API-v1 ist nur fuer DEV/Staging gedacht und darf aktuell nicht auf Live aktiviert werden
 
 Fuer die DEV-Website kann im WordPress-Admin unter `Einstellungen > Niers Regeln` als API-v1 Basis-URL eingetragen werden:
 
 ```text
 https://erp.ki-experte-derix.de/api/v1
 ```
+
+Fuer Live muss diese Option bis zur ausdruecklichen Live-Freigabe leer bleiben. Auch wenn Version `9.18` spaeter nach Live uebernommen wird, darf der Live-Bestellabschluss vorerst nicht ueber `cart_validate.php` laufen.

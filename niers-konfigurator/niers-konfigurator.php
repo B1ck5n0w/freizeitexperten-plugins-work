@@ -3,7 +3,7 @@
 Plugin Name: Niers Touren-Konfigurator
 Plugin URI: https://freizeitexperten.de
 Description: Ein 3-stufiger Konfigurator für Bootsbuchungen an der Niers mit Live-API-Schnittstelle. Shortcode: [niers_konfigurator_3_steps]
-Version: 9.18
+Version: 9.18.1
 Author: Freizeitexperten
 Author URI: https://freizeitexperten.de
 */
@@ -46,7 +46,7 @@ function niers_konfigurator_get_tour_data_json() {
     {"name":"Kessel","km":19,"time":5,"minPax":10,"price":25,"price1er":33,"priceChild":12,"ids":{"kanu":173,"kajak":179,"schlauch":58},"times":{"mf":["12:00"],"ss":["10:00","12:00"]},"seasonStart":"2026-04-15","seasonEnd":"2026-10-31"}
   ]},
   {"start":"Jan an de Fähr","destinations":[
-    {"name":"Goch","km":4,"time":1.5,"price":18,"price1er":24,"priceChild":12,"ids":{"kanu":174,"kajak":180,"schlauch":60},"times":{"mf":["12:00"],"ss":["10:00","12:00"]},"seasonStart":"2026-04-15","seasonEnd":"2026-10-31"},
+    {"name":"Goch","km":4,"time":1.5,"price":18,"price1er":24,"priceChild":12,"ids":{"kanu":174,"kajak":180,"schlauch":60},"times":{"mf":["11:00","13:00"],"ss":["11:00","13:00"]},"seasonStart":"2026-04-15","seasonEnd":"2026-10-31"},
     {"name":"Kessel","km":12,"time":3.5,"minPax":10,"price":22,"price1er":28.5,"priceChild":12,"ids":{"kanu":175,"kajak":181,"schlauch":64},"times":{"mf":[],"ss":[]},"seasonStart":"2026-04-15","seasonEnd":"2026-10-31"}
   ]}
 ]
